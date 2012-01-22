@@ -81,7 +81,7 @@ struct _GritsPluginGPS {
 	GtkWidget *hbox;
 	GritsMarker *marker;
 
-	struct gps_data_t *gps_data;
+	struct gps_data_t gps_data;
 	gboolean follow_gps;
 	gboolean gps_sn_active;
 	gboolean gps_rangering_active;	/* range rings are visible or not */

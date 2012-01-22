@@ -182,7 +182,7 @@ gps_get_time_string(time_t gps_time)
 static void
 update_gps_status(GritsPluginGPS *gps_state)
 {
-    struct gps_data_t *gps_data = gps_state->gps_data;
+    struct gps_data_t *gps_data = &gps_state->gps_data;
 
     /* gps table update */
     int i;
@@ -264,7 +264,7 @@ static gboolean
 gps_write_log(gpointer data)
 {
     GritsPluginGPS *gps_state = (GritsPluginGPS *)data;
-    struct gps_data_t *gps_data = gps_state->gps_data;
+    struct gps_data_t *gps_data = &gps_state->gps_data;
     char buf[256];
     char filename[256];
     int fd;
@@ -285,8 +285,8 @@ gps_write_log(gpointer data)
 								    == 0) {
 	snprintf(filename, sizeof(filename),
 			    "%sT%s.%s",
-			    gps_get_date_string(gps_state->gps_data->fix.time),
-			    gps_get_time_string(gps_state->gps_data->fix.time),
+			    gps_get_date_string(gps_state->gps_data.fix.time),
+			    gps_get_time_string(gps_state->gps_data.fix.time),
 			    GPS_LOG_EXT);
 	gtk_entry_set_text(GTK_ENTRY(gps_state->ui.gps_log_filename_entry),
 			    filename);
@@ -322,8 +322,8 @@ gps_write_log(gpointer data)
     /* RTR values: T=time, B=button push, S=speed, D=distance */
     snprintf(buf, sizeof(buf), "%d,%s,%s,%lf,%lf,%lf,%lf,%lf,%c\n",
 	gps_state->ui.gps_log_number++,
-	gps_get_date_string(gps_state->gps_data->fix.time),
-	gps_get_time_string(gps_state->gps_data->fix.time),
+	gps_get_date_string(gps_state->gps_data.fix.time),
+	gps_get_time_string(gps_state->gps_data.fix.time),
 //	gps_data->fix.time,
 	gps_data->fix.latitude,
 	gps_data->fix.longitude,
@@ -526,7 +526,7 @@ static gboolean
 gps_update_sn(gpointer user_data)
 {
     GritsPluginGPS *gps_state = (GritsPluginGPS *)user_data;
-    struct gps_data_t *gps_data = gps_state->gps_data;
+    struct gps_data_t *gps_data = &gps_state->gps_data;
     SoupMessage *msg;
     char uri[256];
 
@@ -667,7 +667,7 @@ gboolean gps_redraw_all(gpointer data)
     GritsPluginGPS *gps_state = (GritsPluginGPS *)data;
     assert(gps_state);
 
-    struct gps_data_t *gps_data = gps_state->gps_data;
+    struct gps_data_t *gps_data = &gps_state->gps_data;
 
     g_debug("gps_redraw_all called");
 
@@ -696,6 +696,7 @@ gboolean gps_redraw_all(gpointer data)
 	}
 
         gps_state->marker = grits_marker_new("gps");
+		
         GRITS_OBJECT(gps_state->marker)->center.lat  = gps_data->fix.latitude;
         GRITS_OBJECT(gps_state->marker)->center.lon  = gps_data->fix.longitude;
         GRITS_OBJECT(gps_state->marker)->center.elev =   0.0;
@@ -828,36 +829,24 @@ char *gps_get_speed(struct gps_data_t *gps_data)
 
 
 static
-struct gps_data_t *initialize_gpsd(char *device, char *port)
+gint initialize_gpsd(char *server, char *port,
+	struct gps_data_t *gps_data)
 {
-    struct gps_data_t *gps_data;
+#if GPSD_API_MAJOR_VERSION < 5
+#error "GPSD protocol version 5 or greater required."
+#endif
+    int result;
 
-    if ((gps_data = gps_open(device, port)) == NULL) {
-	g_warning("Unable to open gpsd connection");
-        gps_data = NULL;
+    if ((result = gps_open(server, port, gps_data)) != 0) {
+	g_warning("Unable to open gpsd connection to %s:%s: %d, %d, %s",
+	server, port, result, errno, gps_errstr(errno));
     } else {
-
-#if GPSD_API_MAJOR_VERSION < 4
-        /* set data smothing */
-        gps_query(gps_data, "j=1\n");
-
-        /* Put gpsd in "watcher" mode so it continually tells us of updates */
-        gps_query(gps_data, "w+ox");
-
-        if (gps_query(gps_data, "o\n") == -1) {
-            g_warning("Error querying gps data\n");
-        }
-        gdk_input_add(gps_data->gps_fd, GDK_INPUT_READ, process_gps, gps_data);
-        gps_clear_fix(&gps_data->fix);
-
-#else /* Version > 4 uses gps_stream() instead */
         (void)gps_stream(gps_data, WATCH_ENABLE|WATCH_JSON, NULL);
 	g_debug("initialize_gpsd(): gpsd fd %u.", gps_data->gps_fd);
         gdk_input_add(gps_data->gps_fd, GDK_INPUT_READ, process_gps, gps_data);
-#endif
     }
 
-    return gps_data;
+    return result;
 }
 
 static void
@@ -888,7 +877,7 @@ GritsPluginGPS *grits_plugin_gps_new(GritsViewer *viewer, GritsPrefs *prefs)
 
 	g_debug("grits_plugin_gps_new()");
 
-	self->gps_data = initialize_gpsd("localhost", DEFAULT_GPSD_PORT);
+	initialize_gpsd("localhost", DEFAULT_GPSD_PORT, &self->gps_data);
 	self->follow_gps = FALSE;
 	self->gps_sn_active = FALSE;
 
