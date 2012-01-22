@@ -17,10 +17,22 @@ PKG_CHECK_MODULES(GLIB,  glib-2.0)
 PKG_CHECK_MODULES(GRITS, grits >= 0.6)
 
 # Check for gpsd support
-AC_CHECK_LIB(gps, gps_open, GPS_LIBS="-lgps")
-AM_CONDITIONAL(HAVE_GPSD, test "$GPS_LIBS" != "")
-AC_DEFINE([HAVE_GPSD], [1], [GPSD support])
-AC_SUBST(GPS_LIBS)
+AC_ARG_WITH([gps], AS_HELP_STRING([--with-gps], [Build with gpsd support]))
+
+if test "x$with_gps" = "xyes"; then
+   PKG_CHECK_MODULES(GPSD, libgps >= 3.0)
+   AC_DEFINE([HAVE_GPSD], [], [Have GPSD support])
+   AC_SUBST(HAVE_GPSD, [TRUE])
+fi
+AM_CONDITIONAL([HAVE_GPSD], test "$HAVE_GPSD" = "TRUE")
+
+# PKG_CHECK_MODULES(GPSD, libgps >= 3.0)
+#AC_ARG_WITH([gps], AS_HELP_STRING([--with-gps], [Build with gpsd support]))
+#AS_IF([test "x$with_gps" = "xyes"], [
+#   PKG_CHECK_MODULES([GPSD], [libgps >= 3.0],
+#      [AC_DEFINE([HAVE_GPSD], [1], [Use GPSD])],
+#      [AC_DEFINE([HAVE_GPSD], [0], [No GPSD])]
+#   ])
 
 # Define odd RSL install location
 AC_CHECK_LIB(rsl, RSL_wsr88d_to_radar, RSL_LIBS="-lrsl")

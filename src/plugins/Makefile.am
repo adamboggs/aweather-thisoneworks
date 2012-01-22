@@ -28,7 +28,7 @@ gps_la_SOURCES = \
 gps_la_CPPFLAGS = \
 	-DPKGDATADIR="\"$(dots)$(pkgdatadir)\"" \
 	-I$(top_srcdir)/src
-gps_la_LIBADD  = $(GPS_LIBS) $(GRITS_LIBS)
+gps_la_LIBADD  = $(GPSD_LIBS) $(GRITS_LIBS)
 endif
 
 if HAVE_RSL
