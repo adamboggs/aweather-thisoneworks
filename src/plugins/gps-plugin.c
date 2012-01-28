@@ -42,12 +42,6 @@
 #define GPS_LOG_DEFAULT_UPDATE_INTERVAL (30)
 #define GPS_LOG_EXT "csv"
 
-/* interval to update SpotterNetwork in seconds.  Should not be less
- * than 3 minutes per SpotterNetwork policy.
- */
-#define GPS_SN_UPDATE_INTERVAL (5 * 60)
-#define GPS_SN_URI "http://www.spotternetwork.org/update.php"
-
 /* For updating the status bar conveniently */
 #define GPS_STATUSBAR_CONTEXT "GPS"
 #if 0
@@ -74,17 +68,11 @@ static char *gps_get_time_string(time_t gps_time);
 static char *gps_get_date_string(double gps_time);
 static void process_gps( gpointer, gint, GdkInputCondition);
 
-/* SpotterNetwork support */
-static void gps_init_spotter_network_frame(GritsPluginGPS *gps_state,
-	    GtkWidget *gbox);
-static gboolean gps_update_sn(gpointer data);
-static void gps_sn_update_complete(SoupSession *, SoupMessage *, gpointer);
-static gboolean on_gps_sn_clicked_event (GtkWidget *widget, gpointer user_data);
-static gboolean on_gps_sn_active_clicked_event (GtkWidget *widget, gpointer user_data);
-
+#ifdef GPS_RANGE_RINGS
 static void gps_init_range_rings(GritsPluginGPS *gps_state,
             GtkWidget *gbox);
 static gboolean on_gps_rangering_clicked_event (GtkWidget *widget, gpointer user_data);
+#endif
 
 static void gps_init_status_info(GritsPluginGPS *gps_state,
 	    GtkWidget *gbox);
@@ -125,15 +113,6 @@ struct gps_status_info gps_table[] = {
     {"Heading:", "No Data", gps_get_heading, 14, NULL, NULL},
     {"Speed:", "No Data", gps_get_speed, 14, NULL, NULL},
 };
-
-static void _gtk_bin_set_child(GtkBin *bin, GtkWidget *new)
-{
-	GtkWidget *old = gtk_bin_get_child(bin);
-	if (old)
-		gtk_widget_destroy(old);
-	gtk_container_add(GTK_CONTAINER(bin), new);
-	gtk_widget_show_all(new);
-}
 
 static
 gboolean gps_data_is_valid(struct gps_data_t *gps_data)
@@ -432,163 +411,6 @@ on_gps_log_clicked_event (GtkWidget *widget, gpointer user_data)
     return FALSE;
 }
 
-static void
-gps_init_spotter_network_frame(GritsPluginGPS *gps_state, GtkWidget *gbox)
-{
-    /* Spotter network control box with enable checkbox, active
-     * checkbox, and sn ID entry
-     */
-    GtkWidget *gps_sn_frame = gtk_frame_new ("SpotterNetwork Control");
-    GtkWidget *sbox = gtk_vbox_new (FALSE, 2);
-    gtk_container_add (GTK_CONTAINER (gps_sn_frame), sbox);
-
-    /* create spotter network update checkbox */
-    gps_state->ui.gps_sn_checkbox = gtk_check_button_new_with_label("Update SpotterNetwork");
-    g_signal_connect (G_OBJECT (gps_state->ui.gps_sn_checkbox), "clicked",
-                      G_CALLBACK (on_gps_sn_clicked_event),
-		      (gpointer)gps_state);
-    gtk_box_pack_start (GTK_BOX(sbox), gps_state->ui.gps_sn_checkbox,
-			FALSE, FALSE, 0);
-
-    /* Create spotter network active checkbox */
-    gps_state->ui.gps_sn_active_checkbox = gtk_check_button_new_with_label("Active");
-    g_signal_connect (G_OBJECT (gps_state->ui.gps_sn_active_checkbox),
-			"clicked",
-			G_CALLBACK (on_gps_sn_active_clicked_event),
-			(gpointer)gps_state);
-    gtk_box_pack_start (GTK_BOX(sbox),
-    			gps_state->ui.gps_sn_active_checkbox,
-			FALSE, FALSE, 0);
-
-    /* Create spotter network ID entry box and label */
-    GtkWidget *ebox = gtk_hbox_new (FALSE, 2);
-    GtkWidget *sn_label = gtk_label_new ("SpotterID:");
-    gtk_box_pack_start (GTK_BOX(ebox), sn_label, FALSE, FALSE, 0);
-    gps_state->ui.gps_sn_entry = gtk_entry_new();
-    gtk_box_pack_start (GTK_BOX(ebox), gps_state->ui.gps_sn_entry,
-			FALSE, FALSE, 0);
-    gtk_box_pack_start (GTK_BOX(sbox), ebox, FALSE, FALSE, 0);
-
-    gtk_box_pack_start (GTK_BOX(gbox), gps_sn_frame, FALSE, FALSE, 0);
-}
-
-static gboolean
-on_gps_sn_clicked_event (GtkWidget *widget, gpointer user_data)
-{
-    GritsPluginGPS *gps_state = (GritsPluginGPS *)user_data;
-    g_debug("on_gps_sn_clicked_event called");
-
-    /* When pressed, log a position report to spotternetwork and
-     * schedule another one for the future.
-     */
-    if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (widget)))  {
-	/* Change naumber of concurrent connections option? */
-	assert(gps_state->ui.soup_session == NULL);
-	gps_state->ui.soup_session = soup_session_async_new_with_options(
-			 SOUP_SESSION_USER_AGENT,
-			 "Mozilla/5.0 (Windows; U; Windows NT 5.1; "
-			 "en-US; rv:1.8.1.11) Gecko/20071127 Firefox/2.0.0.11",
-			 NULL);
-
-	/* XXX don't log right away to give the user a chance to cancel */
-	gps_update_sn(gps_state);
-	gps_state->ui.gps_sn_timeout_id = g_timeout_add(
-			GPS_SN_UPDATE_INTERVAL*1000,
-    			gps_update_sn, gps_state);
-    } else {
-	/* stop any pending timer events */
-	g_source_remove(gps_state->ui.gps_sn_timeout_id);
-	gps_state->ui.gps_sn_timeout_id = 0;
-	soup_session_abort(gps_state->ui.soup_session);
-	g_object_unref(gps_state->ui.soup_session);
-	gps_state->ui.soup_session = NULL;
-    }
-
-    return FALSE;
-}
-
-static gboolean
-on_gps_sn_active_clicked_event (GtkWidget *widget, gpointer user_data)
-{
-    GritsPluginGPS *gps_state = (GritsPluginGPS *)user_data;
-
-    if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (widget)))  {
-	gps_state->ui.gps_sn_active = TRUE;
-    } else {
-	gps_state->ui.gps_sn_active = FALSE;
-    }
-
-    return FALSE;
-}
-
-/* Send position report to spotternetwork */
-static gboolean
-gps_update_sn(gpointer user_data)
-{
-    GritsPluginGPS *gps_state = (GritsPluginGPS *)user_data;
-    struct gps_data_t *gps_data = &gps_state->gps_data;
-    SoupMessage *msg;
-    char uri[256];
-
-    /* Make sure gps data is valid */
-    if (!gps_data_is_valid(gps_data)) {
-	g_warning("Skipping SpotterNetwork update, GPS data is invalid!");
-	GPS_STATUS(gps_state, "Skipped SpotterNetwork update, "
-            "GPS data is invalid!");
-	return TRUE;
-    }
-
-    /* Make sure SpotterNetwork ID is valid */
-    if (gtk_entry_get_text_length(GTK_ENTRY(gps_state->ui.gps_sn_entry)) == 0) {
-	g_warning("Skipping SpotterNetwork update, ID \"%s\" is invalid!",
-                gtk_entry_get_text(GTK_ENTRY(gps_state->ui.gps_sn_entry)));
-	GPS_STATUS(gps_state, "Skipping SpotterNetwork update, "
-                "ID \"%s\" is invalid!",
-                gtk_entry_get_text(GTK_ENTRY(gps_state->ui.gps_sn_entry)));
-	return TRUE;
-    }
-
-    snprintf(uri, sizeof(uri),
-    "%s?lat=%lf&lon=%lf&elev=%lf&dir=%lf&mph=%lf&gps=1&active=%d&ver=1&id=%s",
-	GPS_SN_URI,
-	gps_data->fix.latitude,
-	gps_data->fix.longitude,
-	gps_data->fix.altitude * METERS_TO_FEET,
-	gps_data->fix.track,
-	gps_data->fix.speed,
-	gps_state->gps_sn_active == TRUE ? 1 : 0,
-	gtk_entry_get_text(GTK_ENTRY(gps_state->ui.gps_sn_entry)));
-
-    g_debug("gps_update_sn called uri: %s", uri);
-
-    msg = soup_message_new (SOUP_METHOD_GET, uri);
-    if (msg) {
-	soup_session_queue_message (gps_state->ui.soup_session, msg,
-				    gps_sn_update_complete, gps_state);
-    } else {
-	g_warning("unable to create spotternetwork message");
-    }
-
-    /* reschedule next update */
-    return TRUE;
-}
-
-static void
-gps_sn_update_complete (SoupSession *session, SoupMessage *msg, gpointer user_data)
-{
-    if (SOUP_STATUS_IS_SUCCESSFUL (msg->status_code)) {
-	g_debug("gps_sn_update_complete: %s",
-			msg->response_body->data);
-        GPS_STATUS(gps_state, "Updated SpotterNetwork.");
-    } else {
-	GPS_STATUS(gps_state, "Could not update SpotterNetwork: %s",
-                        msg->reason_phrase);
-	g_warning("Could not update SpotterNetwork: %s",
-			msg->reason_phrase);
-    }
-}
-
-
 
 static void
 gps_init_status_info(GritsPluginGPS *gps_state, GtkWidget *gbox)
@@ -629,6 +451,7 @@ gps_init_status_info(GritsPluginGPS *gps_state, GtkWidget *gbox)
 }
 
 
+#ifdef GPS_RANGE_RINGS
 static void
 gps_init_range_rings(GritsPluginGPS *gps_state, GtkWidget *gbox)
 {
@@ -660,6 +483,7 @@ on_gps_rangering_clicked_event (GtkWidget *widget, gpointer user_data)
 
     return FALSE;
 }
+#endif /* GPS_RANGE_RINGS */
 
 /* external interface to update UI from latest GPS data. */
 gboolean gps_redraw_all(gpointer data)
@@ -701,6 +525,7 @@ gboolean gps_redraw_all(gpointer data)
         GRITS_OBJECT(gps_state->marker)->center.lon  = gps_data->fix.longitude;
         GRITS_OBJECT(gps_state->marker)->center.elev =   0.0;
         GRITS_OBJECT(gps_state->marker)->lod         = EARTH_R;
+
         grits_viewer_add(gps_state->viewer, GRITS_OBJECT(gps_state->marker),
 			GRITS_LEVEL_OVERLAY, FALSE);
 	grits_viewer_refresh(gps_state->viewer);
@@ -879,13 +704,13 @@ GritsPluginGPS *grits_plugin_gps_new(GritsViewer *viewer, GritsPrefs *prefs)
 
 	initialize_gpsd("localhost", DEFAULT_GPSD_PORT, &self->gps_data);
 	self->follow_gps = FALSE;
-	self->gps_sn_active = FALSE;
 
 	gps_init_status_info(self, self->hbox);
 	gps_init_control_frame(self, self->hbox);
 	gps_init_track_log_frame(self, self->hbox);
-	gps_init_spotter_network_frame(self, self->hbox);
+#ifdef GPS_RANGE_RINGS
 	gps_init_range_rings(self, self->hbox);
+#endif
 
 	return self;
 }
@@ -926,8 +751,6 @@ static void grits_plugin_gps_init(GritsPluginGPS *self)
 static void grits_plugin_gps_dispose(GObject *gobject)
 {
 	g_debug("GritsPluginGPS: dispose");
-	GritsPluginGPS *self = GRITS_PLUGIN_GPS(gobject);
-	g_signal_handler_disconnect(self->config, self->tab_id);
 
 	/* Drop references */
 	G_OBJECT_CLASS(grits_plugin_gps_parent_class)->dispose(gobject);

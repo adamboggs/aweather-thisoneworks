@@ -57,14 +57,6 @@ struct gps_ui_t {
     guint gps_log_timeout_id;		/* id of timeout so we can delete it */
     unsigned int gps_log_number;	/* sequential log number */
 
-    /* spotternetwork frame */
-    GtkWidget *gps_sn_checkbox;
-    GtkWidget *gps_sn_active_checkbox;
-    gboolean gps_sn_active;		/* Whether chaser is "active" or not */
-    SoupSession *soup_session;		/* for sn requests */
-    guint gps_sn_timeout_id;		/* id of timeout so we can delete it */
-    GtkWidget *gps_sn_entry;		/* Entry box for spotternetwork ID */
-
     /* range ring frame */
     GtkWidget *gps_rangering_checkbox;
 };
@@ -83,7 +75,6 @@ struct _GritsPluginGPS {
 
 	struct gps_data_t gps_data;
 	gboolean follow_gps;
-	gboolean gps_sn_active;
 	gboolean gps_rangering_active;	/* range rings are visible or not */
 	guint gps_update_timeout_id;	/* id of timeout so we can delete it */
 
