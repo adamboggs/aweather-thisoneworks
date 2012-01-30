@@ -15,6 +15,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+ /* TODO:
+  *    If gpsd connection fails, try to connect again periodically.
+  *    If gps stops sending data there should be an indication that it's stale.
+  */
+
 #define _XOPEN_SOURCE
 #include <stdio.h>
 #include <fcntl.h>
@@ -505,8 +510,8 @@ gboolean gps_redraw_all(gpointer data)
     /* update position labels */
     update_gps_status(gps_state);
 
+    /* Update track and marker position */
     if (gps_data_is_valid(gps_data)) {
-	/* Update track and marker position */
         g_debug("Updating track at lat = %f, long = %f, track = %f",
                         gps_data->fix.latitude,
                         gps_data->fix.longitude,
@@ -515,11 +520,11 @@ gboolean gps_redraw_all(gpointer data)
 	if (gps_state->marker) {
 	    grits_viewer_remove(gps_state->viewer,
 		    GRITS_OBJECT(gps_state->marker));
-	    g_object_unref(gps_state->viewer);
 	    gps_state->marker = NULL;
 	}
 
-        gps_state->marker = grits_marker_new("gps");
+	gps_state->marker = grits_marker_icon_new("GPS", "car.png",
+		gps_data->fix.track, TRUE);
 		
         GRITS_OBJECT(gps_state->marker)->center.lat  = gps_data->fix.latitude;
         GRITS_OBJECT(gps_state->marker)->center.lon  = gps_data->fix.longitude;
@@ -527,7 +532,7 @@ gboolean gps_redraw_all(gpointer data)
         GRITS_OBJECT(gps_state->marker)->lod         = EARTH_R;
 
         grits_viewer_add(gps_state->viewer, GRITS_OBJECT(gps_state->marker),
-			GRITS_LEVEL_OVERLAY, FALSE);
+			GRITS_LEVEL_OVERLAY, TRUE);
 	grits_viewer_refresh(gps_state->viewer);
     }
 
@@ -542,7 +547,7 @@ gboolean gps_redraw_all(gpointer data)
 	grits_viewer_get_location(gps_state->viewer, &lat, &lon, &elev);
 	grits_viewer_set_location(gps_state->viewer, gps_data->fix.latitude,
 					  gps_data->fix.longitude, elev);
-	grits_viewer_set_rotation(gps_state->viewer, 0, 0, 0);
+	//grits_viewer_set_rotation(gps_state->viewer, 0, 0, 0);
     }
 
     /* reschedule */
@@ -750,7 +755,18 @@ static void grits_plugin_gps_init(GritsPluginGPS *self)
 
 static void grits_plugin_gps_dispose(GObject *gobject)
 {
+	GritsPluginGPS *self = GRITS_PLUGIN_GPS(gobject);
+
 	g_debug("GritsPluginGPS: dispose");
+
+        if (self->viewer) {
+		if (self->marker) {
+		    grits_viewer_remove(self->viewer,
+		    			GRITS_OBJECT(self->marker));
+		}
+                g_object_unref(self->viewer);
+                self->viewer = NULL;
+        }
 
 	/* Drop references */
 	G_OBJECT_CLASS(grits_plugin_gps_parent_class)->dispose(gobject);
@@ -758,8 +774,10 @@ static void grits_plugin_gps_dispose(GObject *gobject)
 
 static void grits_plugin_gps_finalize(GObject *gobject)
 {
-	g_debug("GritsPluginGPS: finalize");
 	GritsPluginGPS *self = GRITS_PLUGIN_GPS(gobject);
+
+	g_debug("GritsPluginGPS: finalize");
+
 	/* Free data */
 	gtk_widget_destroy(self->config);
 	G_OBJECT_CLASS(grits_plugin_gps_parent_class)->finalize(gobject);
