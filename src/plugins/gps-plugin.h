@@ -49,6 +49,7 @@ struct gps_ui_t {
     /* control frame */
     GtkWidget *gps_follow_checkbox;
     GtkWidget *gps_track_checkbox;
+    GtkWidget *gps_clear_button;
 
     /* log frame */
     GtkWidget *gps_log_checkbox;
@@ -59,6 +60,16 @@ struct gps_ui_t {
 
     /* range ring frame */
     GtkWidget *gps_rangering_checkbox;
+};
+
+struct gps_track_t {
+	/* track storage */
+	gboolean active;	/* Display track history */
+	gdouble (**points)[3];
+	GritsLine *line;
+	guint cur_point;
+	guint num_points;
+	guint cur_group;
 };
 
 /* GPS private data */
@@ -78,6 +89,7 @@ struct _GritsPluginGPS {
 	gboolean gps_rangering_active;	/* range rings are visible or not */
 	guint gps_update_timeout_id;	/* id of timeout so we can delete it */
 
+	struct gps_track_t track;
 	struct gps_ui_t ui;
 };
 

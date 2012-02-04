@@ -43,6 +43,11 @@
 /* interval to update map with new gps data in seconds. */
 #define GPS_UPDATE_INTERVAL (2)
 
+/* number of track points per group and number of groups to maintain */
+#define NUM_TRACK_POINTS (6)
+#define NUM_TRACK_GROUPS (4)
+#define NUM_TRACK_POINTS_FACTOR (1.5)
+
 /* interval to update log file in seconds (default value for slider) */
 #define GPS_LOG_DEFAULT_UPDATE_INTERVAL (30)
 #define GPS_LOG_EXT "csv"
@@ -64,7 +69,7 @@
 #define GPS_STATUS(gps_state, format, args...) \
     do { \
         char *buf = g_strdup_printf(format, ##args); \
-	g_warning("STATUS: %s", buf); \
+	g_debug("STATUS: %s", buf); \
     } while (0)
 
 
@@ -89,7 +94,16 @@ static gboolean on_gps_follow_clicked_event (GtkWidget *widget, gpointer user_da
 static void gps_init_track_log_frame(GritsPluginGPS *gps_state,
 	    GtkWidget *gbox);
 static gboolean on_gps_log_clicked_event (GtkWidget *widget, gpointer user_data);
-static gboolean on_gps_track_clicked_event (GtkWidget *widget, gpointer user_data);
+
+/* Track management */
+static void gps_track_init(struct gps_track_t *track);
+static void gps_track_free(struct gps_track_t *track);
+static void gps_track_clear(struct gps_track_t *track);
+static void gps_track_add_point(struct gps_track_t *track, gdouble lat, gdouble lon, gdouble elevation);
+static void gps_track_group_incr(struct gps_track_t *track);
+
+static gboolean on_gps_track_enable_clicked_event(GtkWidget *widget, gpointer user_data);
+static gboolean on_gps_track_clear_clicked_event(GtkWidget *widget, gpointer user_data);
 static gboolean gps_write_log(gpointer data);
 
 static char *gps_get_status(struct gps_data_t *);
@@ -182,36 +196,67 @@ static void
 gps_init_control_frame(GritsPluginGPS *gps_state, GtkWidget *gbox)
 {
     /* Control checkboxes */
-    GtkWidget *gps_control_frame = gtk_frame_new ("GPS Control");
-    GtkWidget *cbox = gtk_vbox_new (FALSE, 2);
-    gtk_container_add (GTK_CONTAINER (gps_control_frame), cbox);
-    gtk_box_pack_start (GTK_BOX(gbox), gps_control_frame, FALSE, FALSE, 0);
+    GtkWidget *gps_control_frame = gtk_frame_new("GPS Control");
+    GtkWidget *cbox = gtk_vbox_new(FALSE, 2);
+    gtk_container_add(GTK_CONTAINER(gps_control_frame), cbox);
+    gtk_box_pack_start(GTK_BOX(gbox), gps_control_frame, FALSE, FALSE, 0);
 
     gps_state->ui.gps_follow_checkbox = gtk_check_button_new_with_label("Follow GPS");
-    g_signal_connect (G_OBJECT (gps_state->ui.gps_follow_checkbox), "clicked",
+    g_signal_connect(G_OBJECT(gps_state->ui.gps_follow_checkbox), "clicked",
                       G_CALLBACK (on_gps_follow_clicked_event),
 		      (gpointer)gps_state);
-    gtk_box_pack_start (GTK_BOX(cbox), gps_state->ui.gps_follow_checkbox,
+    gtk_box_pack_start(GTK_BOX(cbox), gps_state->ui.gps_follow_checkbox,
 			FALSE, FALSE, 0);
-    gps_state->ui.gps_track_checkbox = gtk_check_button_new_with_label("Show Track");
-    g_signal_connect (G_OBJECT (gps_state->ui.gps_track_checkbox), "clicked",
-                      G_CALLBACK (on_gps_track_clicked_event),
+
+    gps_state->ui.gps_track_checkbox = gtk_check_button_new_with_label("Record Track");
+    g_signal_connect(G_OBJECT(gps_state->ui.gps_track_checkbox), "clicked",
+                      G_CALLBACK (on_gps_track_enable_clicked_event),
 		      (gpointer)gps_state);
-    gtk_box_pack_start (GTK_BOX(cbox), gps_state->ui.gps_track_checkbox,
+    gtk_box_pack_start(GTK_BOX(cbox), gps_state->ui.gps_track_checkbox,
+			FALSE, FALSE, 0);
+
+    gps_state->ui.gps_clear_button = gtk_button_new_with_label("Clear Track");
+    g_signal_connect(G_OBJECT(gps_state->ui.gps_clear_button), "clicked",
+                      G_CALLBACK (on_gps_track_clear_clicked_event),
+		      (gpointer)gps_state);
+    gtk_box_pack_start(GTK_BOX(cbox), gps_state->ui.gps_clear_button,
 			FALSE, FALSE, 0);
 }
 
 static gboolean
-on_gps_track_clicked_event (GtkWidget *widget, gpointer user_data)
+on_gps_track_enable_clicked_event(GtkWidget *widget, gpointer user_data)
 {
-    g_debug("on_gps_track_clicked_event called!");
+    GritsPluginGPS *gps_state = (GritsPluginGPS *)user_data;
+
+    g_debug("on_gps_track_enable_clicked_event called");
+
     if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (widget))) {
-	/* XXX start logging trip history */
+	/* start logging trip history */
 	GPS_STATUS(gps_state, "Enabled GPS track.");
+	gps_state->track.active = TRUE;
     } else {
-	/* XXX stop logging trip history */
+	/* stop logging trip history */
 	GPS_STATUS(gps_state, "Disabled GPS track.");
+	gps_state->track.active = FALSE;
+	/* advance to the next track group, moving everything down if
+	 * it's full.
+	 */
+	gps_track_group_incr(&gps_state->track);
     }
+
+    return FALSE;
+}
+
+static gboolean
+on_gps_track_clear_clicked_event(GtkWidget *widget, gpointer user_data)
+{
+    GritsPluginGPS *gps_state = (GritsPluginGPS *)user_data;
+
+    g_debug("on_gps_track_clear_clicked_event called");
+
+    GPS_STATUS(gps_state, "Cleared GPS track.");
+
+    gps_track_clear(&gps_state->track);
 
     return FALSE;
 }
@@ -511,12 +556,35 @@ gboolean gps_redraw_all(gpointer data)
     update_gps_status(gps_state);
 
     /* Update track and marker position */
-    if (gps_data_is_valid(gps_data)) {
-        g_debug("Updating track at lat = %f, long = %f, track = %f",
+    if (gps_data_is_valid(gps_data) && gps_state->track.active) {
+        g_debug("Updating track group %u point %u at "
+			"lat = %f, long = %f, track = %f",
+			gps_state->track.cur_group, gps_state->track.cur_point,
                         gps_data->fix.latitude,
                         gps_data->fix.longitude,
                         gps_data->fix.track);
 
+	gps_track_add_point(&gps_state->track,
+	             gps_data->fix.latitude, gps_data->fix.longitude, 0.0);
+
+	if (gps_state->track.line) {
+	    grits_viewer_remove(gps_state->viewer,
+		    GRITS_OBJECT(gps_state->track.line));
+	    gps_state->track.line = NULL;
+	}
+
+	gps_state->track.line = grits_line_new(gps_state->track.points);
+        gps_state->track.line->color[0]  = 1.0;
+        gps_state->track.line->color[1]  = 0;
+        gps_state->track.line->color[2]  = 0.1;
+        gps_state->track.line->color[3]  = 0.5;
+        gps_state->track.line->width     = 3;
+
+	grits_viewer_add(gps_state->viewer, GRITS_OBJECT(gps_state->track.line),
+		    GRITS_LEVEL_OVERLAY, TRUE);
+    }
+
+    if (gps_data_is_valid(gps_data)) {
 	if (gps_state->marker) {
 	    grits_viewer_remove(gps_state->viewer,
 		    GRITS_OBJECT(gps_state->marker));
@@ -553,6 +621,124 @@ gboolean gps_redraw_all(gpointer data)
     /* reschedule */
     return TRUE;
 }
+
+
+/******************* Track handling routines *****************/
+
+static void
+gps_track_init(struct gps_track_t *track)
+{
+	/* Save a spot at the end for the NULL termination */
+	track->points = (gpointer)g_new0(double*, NUM_TRACK_GROUPS + 1);
+	track->cur_point  = 0;
+	track->cur_group  = 0;
+	track->num_points = 1;	/* starts at 1 so realloc logic works */
+	track->line = NULL;
+}
+
+static void
+gps_track_clear(struct gps_track_t *track)
+{
+	int pi;
+	for (pi = 0; pi < NUM_TRACK_GROUPS; pi++) {
+		if (track->points[pi] != NULL) {
+			g_free(track->points[pi]);
+			track->points[pi] = NULL;
+		}
+	}
+	track->cur_point  = 0;
+	track->cur_group  = 0;
+	track->num_points = 1;	/* starts at 1 so realloc logic works */
+}
+
+static void
+gps_track_free(struct gps_track_t *track)
+{
+	gps_track_clear(track);
+	g_free(track->points);
+}
+
+/* add a new track group (points in a track group are connected, and
+ * separated from points in other track groups).
+ */
+static void
+gps_track_group_incr(struct gps_track_t *track)
+{
+	gdouble (**points)[3] = track->points; /* for simplicity */
+
+	/* Just return if they increment it again before any points have
+	 * been added.
+	 */
+	if (points[track->cur_group] == NULL) {
+	    return;
+	}
+
+	g_debug("track_group_incr: incrementing track group to %u.",
+		track->cur_group + 1);
+
+	track->cur_group++;
+	track->cur_point  = 0;
+	track->num_points = 1;	/* starts at 1 so realloc logic works */
+
+	if (track->cur_group >= NUM_TRACK_GROUPS) {
+	    g_debug("track_group_incr: current track group %u is at max %u, "
+	    	    "shifting groups.",
+		    track->cur_group, NUM_TRACK_GROUPS);
+
+	    /* Free the oldest one which falls off the end */
+	    g_free(points[0]);
+
+	    /* shift the rest down, last one should always be NULL already */
+	    /* note we alloc NUM_TRACK_GROUPS+1 */
+	    for (int pi = 0; pi < NUM_TRACK_GROUPS; pi++) {
+		points[pi] = points[pi+1];
+	    }
+
+	    /* always write into the last group */
+	    track->cur_group = NUM_TRACK_GROUPS - 1;
+	}
+}
+
+static void
+gps_track_add_point(struct gps_track_t *track, gdouble lat, gdouble lon,
+    gdouble elevation)
+{
+	gdouble (**points)[3] = track->points; /* for simplicity */
+
+	g_debug("GritsPluginGPS: track_add_point");
+
+	g_assert(track->cur_group < NUM_TRACK_GROUPS &&
+	        (track->cur_point <= track->num_points));
+
+	/* resize/allocate the point group if the current one is full */
+	if (track->cur_point >= track->num_points - 1) {
+		guint new_size = track->num_points == 1 ?
+			    NUM_TRACK_POINTS :
+			    track->num_points * NUM_TRACK_POINTS_FACTOR;
+		g_debug("GritsPluginGPS: track_add_point: reallocating points "
+			"array from %u points to %u points.\n",
+			track->num_points, new_size);
+		points[track->cur_group] = (gpointer)g_renew(gdouble,
+			    points[track->cur_group], 3*(new_size+1));
+		track->num_points = new_size;
+	}
+
+	g_assert(points[track->cur_group] != NULL);
+
+	/* Add the coordinate */
+	lle2xyz(lat, lon, elevation,
+	    &points[track->cur_group][track->cur_point][0],
+	    &points[track->cur_group][track->cur_point][1],
+	    &points[track->cur_group][track->cur_point][2]);
+
+	track->cur_point++;
+
+	/* make sure last point is always 0s so the line drawing stops. */
+	points[track->cur_group][track->cur_point][0] = 0.0;
+	points[track->cur_group][track->cur_point][1] = 0.0;
+	points[track->cur_group][track->cur_point][2] = 0.0;
+}
+
 
 static
 char *gps_get_status(struct gps_data_t *gps_data)
@@ -709,7 +895,8 @@ GritsPluginGPS *grits_plugin_gps_new(GritsViewer *viewer, GritsPrefs *prefs)
 
 	initialize_gpsd("localhost", DEFAULT_GPSD_PORT, &self->gps_data);
 	self->follow_gps = FALSE;
-
+	
+	gps_track_init(&self->track);
 	gps_init_status_info(self, self->hbox);
 	gps_init_control_frame(self, self->hbox);
 	gps_init_track_log_frame(self, self->hbox);
@@ -719,6 +906,7 @@ GritsPluginGPS *grits_plugin_gps_new(GritsViewer *viewer, GritsPrefs *prefs)
 
 	return self;
 }
+
 
 static GtkWidget *grits_plugin_gps_get_config(GritsPlugin *_self)
 {
@@ -767,6 +955,8 @@ static void grits_plugin_gps_dispose(GObject *gobject)
                 g_object_unref(self->viewer);
                 self->viewer = NULL;
         }
+
+	gps_track_free(&self->track);
 
 	/* Drop references */
 	G_OBJECT_CLASS(grits_plugin_gps_parent_class)->dispose(gobject);
