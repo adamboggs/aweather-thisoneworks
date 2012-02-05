@@ -582,6 +582,7 @@ gboolean gps_redraw_all(gpointer data)
 
 	grits_viewer_add(gps_state->viewer, GRITS_OBJECT(gps_state->track.line),
 		    GRITS_LEVEL_OVERLAY, TRUE);
+	grits_object_queue_draw(GRITS_OBJECT(gps_state->track.line));
     }
 
     if (gps_data_is_valid(gps_data)) {
@@ -601,7 +602,7 @@ gboolean gps_redraw_all(gpointer data)
 
         grits_viewer_add(gps_state->viewer, GRITS_OBJECT(gps_state->marker),
 			GRITS_LEVEL_OVERLAY, TRUE);
-	grits_viewer_refresh(gps_state->viewer);
+	grits_object_queue_draw(GRITS_OBJECT(gps_state->marker));
     }
 
     if (gps_state->follow_gps && gps_data_is_valid(gps_data)) {
