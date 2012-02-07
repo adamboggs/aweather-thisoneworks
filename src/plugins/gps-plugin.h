@@ -17,12 +17,6 @@
 #ifndef _GPS_PLUGIN_H
 #define _GPS_PLUGIN_H
 
-gpointer gps_init(GtkWidget *gbox, GtkWidget *status_bar);
-
-void gps_set_follow(gpointer state, gboolean track);
-gboolean gps_key_press_event(gpointer state, GdkEventKey *kevent);
-gboolean gps_redraw_all(gpointer data);
-
 #define GRITS_TYPE_PLUGIN_GPS            (grits_plugin_gps_get_type ())
 #define GRITS_PLUGIN_GPS(obj)            (G_TYPE_CHECK_INSTANCE_CAST((obj),   GRITS_TYPE_PLUGIN_GPS, GritsPluginGps))
 #define GRITS_IS_PLUGIN_GPS(obj)         (G_TYPE_CHECK_INSTANCE_TYPE((obj),   GRITS_TYPE_PLUGIN_GPS))
@@ -34,7 +28,7 @@ typedef struct _GritsPluginGps      GritsPluginGps;
 typedef struct _GritsPluginGpsClass GritsPluginGpsClass;
 
 /* All the User Interface objects we need to keep track of. */
-struct gps_ui_t {
+typedef struct {
 	/* gps info frame */
 	GtkWidget *gps_status_frame;
 	GtkWidget *gps_status_table;
@@ -55,22 +49,22 @@ struct gps_ui_t {
 	GtkWidget *gps_log_checkbox;
 	GtkWidget *gps_log_filename_entry;
 	GtkWidget *gps_log_interval_slider;
-	guint gps_log_timeout_id;		/* id of timeout so we can delete it */
-	guint gps_log_number;	/* sequential log number */
+	guint      gps_log_timeout_id; /* id of timeout so we can delete it */
+	guint      gps_log_number;     /* sequential log number */
 
 	/* range ring frame */
 	GtkWidget *gps_rangering_checkbox;
-};
+} GpsUi;
 
-struct gps_track_t {
+typedef struct {
 	/* track storage */
-	gboolean active;	/* Display track history */
+	gboolean   active;  /* Display track history */
 	gdouble (**points)[3];
 	GritsLine *line;
-	guint cur_point;
-	guint num_points;
-	guint cur_group;
-};
+	guint      cur_point;
+	guint      num_points;
+	guint      cur_group;
+} GpsTrack;
 
 /* GPS private data */
 struct _GritsPluginGps {
@@ -81,16 +75,17 @@ struct _GritsPluginGps {
 	GritsPrefs  *prefs;
 	GtkWidget   *config;
 	guint        tab_id;
-	GtkWidget *hbox;
+	GtkWidget   *hbox;
 	GritsMarker *marker;
 
 	struct gps_data_t gps_data;
-	gboolean follow_gps;
-	gboolean gps_rangering_active;	/* range rings are visible or not */
-	guint gps_update_timeout_id;	/* id of timeout so we can delete it */
 
-	struct gps_track_t track;
-	struct gps_ui_t ui;
+	gboolean     follow_gps;
+	gboolean     gps_rangering_active;  /* range rings are visible or not */
+	guint        gps_update_timeout_id; /* id of timeout so we can delete it */
+
+	GpsTrack     track;
+	GpsUi        ui;
 };
 
 struct _GritsPluginGpsClass {
