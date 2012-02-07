@@ -24,42 +24,42 @@ gboolean gps_key_press_event(gpointer state, GdkEventKey *kevent);
 gboolean gps_redraw_all(gpointer data);
 
 #define GRITS_TYPE_PLUGIN_GPS            (grits_plugin_gps_get_type ())
-#define GRITS_PLUGIN_GPS(obj)            (G_TYPE_CHECK_INSTANCE_CAST((obj),   GRITS_TYPE_PLUGIN_GPS, GritsPluginGPS))
+#define GRITS_PLUGIN_GPS(obj)            (G_TYPE_CHECK_INSTANCE_CAST((obj),   GRITS_TYPE_PLUGIN_GPS, GritsPluginGps))
 #define GRITS_IS_PLUGIN_GPS(obj)         (G_TYPE_CHECK_INSTANCE_TYPE((obj),   GRITS_TYPE_PLUGIN_GPS))
-#define GRITS_PLUGIN_GPS_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST   ((klass), GRITS_TYPE_PLUGIN_GPS, GritsPluginGPSClass))
+#define GRITS_PLUGIN_GPS_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST   ((klass), GRITS_TYPE_PLUGIN_GPS, GritsPluginGpsClass))
 #define GRITS_IS_PLUGIN_GPS_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE   ((klass), GRITS_TYPE_PLUGIN_GPS))
-#define GRITS_PLUGIN_GPS_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj),   GRITS_TYPE_PLUGIN_GPS, GritsPluginGPSClass))
+#define GRITS_PLUGIN_GPS_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj),   GRITS_TYPE_PLUGIN_GPS, GritsPluginGpsClass))
 
-typedef struct _GritsPluginGPS      GritsPluginGPS;
-typedef struct _GritsPluginGPSClass GritsPluginGPSClass;
+typedef struct _GritsPluginGps      GritsPluginGps;
+typedef struct _GritsPluginGpsClass GritsPluginGpsClass;
 
 /* All the User Interface objects we need to keep track of. */
 struct gps_ui_t {
-    /* gps info frame */
-    GtkWidget *gps_status_frame;
-    GtkWidget *gps_status_table;
-    GtkWidget *gps_status_label;
-    GtkWidget *gps_latitude_label;
-    GtkWidget *gps_longitude_label;
-    GtkWidget *gps_heading_label;
-    GtkWidget *gps_elevation_label;
+	/* gps info frame */
+	GtkWidget *gps_status_frame;
+	GtkWidget *gps_status_table;
+	GtkWidget *gps_status_label;
+	GtkWidget *gps_latitude_label;
+	GtkWidget *gps_longitude_label;
+	GtkWidget *gps_heading_label;
+	GtkWidget *gps_elevation_label;
 
-    GtkWidget *status_bar;
+	GtkWidget *status_bar;
 
-    /* control frame */
-    GtkWidget *gps_follow_checkbox;
-    GtkWidget *gps_track_checkbox;
-    GtkWidget *gps_clear_button;
+	/* control frame */
+	GtkWidget *gps_follow_checkbox;
+	GtkWidget *gps_track_checkbox;
+	GtkWidget *gps_clear_button;
 
-    /* log frame */
-    GtkWidget *gps_log_checkbox;
-    GtkWidget *gps_log_filename_entry;
-    GtkWidget *gps_log_interval_slider;
-    guint gps_log_timeout_id;		/* id of timeout so we can delete it */
-    unsigned int gps_log_number;	/* sequential log number */
+	/* log frame */
+	GtkWidget *gps_log_checkbox;
+	GtkWidget *gps_log_filename_entry;
+	GtkWidget *gps_log_interval_slider;
+	guint gps_log_timeout_id;		/* id of timeout so we can delete it */
+	guint gps_log_number;	/* sequential log number */
 
-    /* range ring frame */
-    GtkWidget *gps_rangering_checkbox;
+	/* range ring frame */
+	GtkWidget *gps_rangering_checkbox;
 };
 
 struct gps_track_t {
@@ -73,7 +73,7 @@ struct gps_track_t {
 };
 
 /* GPS private data */
-struct _GritsPluginGPS {
+struct _GritsPluginGps {
 	GObject parent_instance;
 
 	/* instance members */
@@ -93,7 +93,7 @@ struct _GritsPluginGPS {
 	struct gps_ui_t ui;
 };
 
-struct _GritsPluginGPSClass {
+struct _GritsPluginGpsClass {
 	GObjectClass parent_class;
 };
 
