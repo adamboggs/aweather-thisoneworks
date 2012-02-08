@@ -26,7 +26,7 @@ plugins_LTLIBRARIES += gps.la
 gps_la_SOURCES = \
 	gps-plugin.c      gps-plugin.h
 gps_la_CPPFLAGS = \
-	-DPKGDATADIR="\"$(dots)$(pkgdatadir)\"" \
+	-DPKGDATADIR="\"$(DOTS)$(pkgdatadir)\"" \
 	-I$(top_srcdir)/src
 gps_la_LIBADD  = $(GPSD_LIBS) $(GRITS_LIBS)
 endif

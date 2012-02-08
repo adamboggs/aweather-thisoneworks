@@ -48,9 +48,9 @@
 #define GPS_MARKER_ICON         "arrow.png"
 
 /* number of track points per group and number of groups to maintain */
-#define NUM_TRACK_POINTS        (6)
-#define NUM_TRACK_GROUPS        (4)
-#define NUM_TRACK_POINTS_FACTOR (1.5)
+#define GPS_TRACK_POINTS        (256)
+#define GPS_TRACK_GROUPS        (16)
+#define GPS_TRACK_POINTS_FACTOR (1.5)
 
 /* interval to update log file in seconds (default value for slider) */
 #define GPS_LOG_DEFAULT_UPDATE_INTERVAL (30)
@@ -231,7 +231,7 @@ struct {
 static void gps_track_init(GpsTrack *track)
 {
 	/* Save a spot at the end for the NULL termination */
-	track->points = (gpointer)g_new0(double*, NUM_TRACK_GROUPS + 1);
+	track->points = (gpointer)g_new0(double*, GPS_TRACK_GROUPS + 1);
 	track->cur_point  = 0;
 	track->cur_group  = 0;
 	track->num_points = 1;	/* starts at 1 so realloc logic works */
@@ -241,7 +241,7 @@ static void gps_track_init(GpsTrack *track)
 static void gps_track_clear(GpsTrack *track)
 {
 	gint pi;
-	for (pi = 0; pi < NUM_TRACK_GROUPS; pi++) {
+	for (pi = 0; pi < GPS_TRACK_GROUPS; pi++) {
 		if (track->points[pi] != NULL) {
 			g_free(track->points[pi]);
 			track->points[pi] = NULL;
@@ -278,22 +278,22 @@ static void gps_track_group_incr(GpsTrack *track)
 	track->cur_point  = 0;
 	track->num_points = 1;	/* starts at 1 so realloc logic works */
 
-	if (track->cur_group >= NUM_TRACK_GROUPS) {
+	if (track->cur_group >= GPS_TRACK_GROUPS) {
 		g_debug("GritsPluginGps: track_group_incr - track group %u "
 		        "is at max %u, shifting groups",
-		        track->cur_group, NUM_TRACK_GROUPS);
+		        track->cur_group, GPS_TRACK_GROUPS);
 
 		/* Free the oldest one which falls off the end */
 		g_free(points[0]);
 
 		/* shift the rest down, last one should be NULL already */
-		/* note we alloc NUM_TRACK_GROUPS+1 */
-		for (int pi = 0; pi < NUM_TRACK_GROUPS; pi++) {
+		/* note we alloc GPS_TRACK_GROUPS+1 */
+		for (int pi = 0; pi < GPS_TRACK_GROUPS; pi++) {
 			points[pi] = points[pi+1];
 		}
 
 		/* always write into the last group */
-		track->cur_group = NUM_TRACK_GROUPS - 1;
+		track->cur_group = GPS_TRACK_GROUPS - 1;
 	}
 }
 
@@ -304,14 +304,14 @@ static void gps_track_add_point(GpsTrack *track,
 
 	g_debug("GritsPluginGps: track_add_point");
 
-	g_assert(track->cur_group < NUM_TRACK_GROUPS &&
+	g_assert(track->cur_group < GPS_TRACK_GROUPS &&
 	        (track->cur_point <= track->num_points));
 
 	/* resize/allocate the point group if the current one is full */
 	if (track->cur_point >= track->num_points - 1) {
 		guint new_size = track->num_points == 1 ?
-			    NUM_TRACK_POINTS :
-			    track->num_points * NUM_TRACK_POINTS_FACTOR;
+			    GPS_TRACK_POINTS :
+			    track->num_points * GPS_TRACK_POINTS_FACTOR;
 		g_debug("GritsPluginGps: track_add_point - reallocating points "
 			"array from %u points to %u points.\n",
 			track->num_points, new_size);
@@ -401,7 +401,7 @@ static gboolean gps_write_log(gpointer data)
 
 	strncpy(filename,
 	    gtk_entry_get_text(GTK_ENTRY(gps->ui.gps_log_filename_entry)),
-	    sizeof (filename));
+	    sizeof(filename));
 
 	if (!g_file_test(filename, G_FILE_TEST_EXISTS)) {
 		new_file = TRUE;
@@ -452,43 +452,6 @@ static gboolean gps_write_log(gpointer data)
 }
 
 
-/***************
- * Range rings *
- ***************/
-
-#ifdef GPS_RANGE_RINGS
-static gboolean on_gps_rangering_clicked_event(GtkWidget *widget, gpointer user_data)
-{
-	GritsPluginGps *gps = (GritsPluginGps *)user_data;
-
-	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(widget)))  {
-		gps->gps_rangering_active = TRUE;
-	} else {
-		gps->gps_rangering_active = FALSE;
-	}
-
-	/* XXX force a redraw */
-
-	return FALSE;
-}
-
-static void gps_init_range_rings(GritsPluginGps *gps, GtkWidget *gbox)
-{
-	GtkWidget *gps_range_ring_frame = gtk_frame_new("Range Rings");
-	GtkWidget *cbox = gtk_vbox_new(FALSE, 2);
-	gtk_container_add(GTK_CONTAINER(gps_range_ring_frame), cbox);
-	gtk_box_pack_start(GTK_BOX(gbox), gps_range_ring_frame, FALSE, FALSE, 0);
-
-	gps->ui.gps_rangering_checkbox = gtk_check_button_new_with_label("Enable Range Rings");
-	g_signal_connect(G_OBJECT(gps->ui.gps_rangering_checkbox),
-	              "clicked", G_CALLBACK(on_gps_rangering_clicked_event),
-	              (gpointer)gps);
-	gtk_box_pack_start(GTK_BOX(cbox), gps->ui.gps_rangering_checkbox,
-	              FALSE, FALSE, 0);
-}
-#endif /* GPS_RANGE_RINGS */
-
-
 /****************
  * Main drawing *
  ****************/
@@ -512,7 +475,7 @@ static void gps_update_status(GritsPluginGps *gps)
 	gint i;
 	gchar *str;
 	for (i = 0; i < G_N_ELEMENTS(gps_table); i++) {
-		gtk_label_set_markup (GTK_LABEL(gps_table[i].value_widget),
+		gtk_label_set_markup(GTK_LABEL(gps_table[i].value_widget),
 		            (str = gps_table[i].get_data(gps_data)));
 		g_free(str);
 	}
@@ -561,11 +524,11 @@ gboolean gps_redraw_all(gpointer data)
 		gps->track.line->color[0]  = 1.0;
 		gps->track.line->color[1]  = 0;
 		gps->track.line->color[2]  = 0.1;
-		gps->track.line->color[3]  = 0.5;
+		gps->track.line->color[3]  = 1.0;
 		gps->track.line->width     = 3;
 
 		grits_viewer_add(gps->viewer, GRITS_OBJECT(gps->track.line),
-			    GRITS_LEVEL_OVERLAY, TRUE);
+			    GRITS_LEVEL_OVERLAY, FALSE);
 		grits_object_queue_draw(GRITS_OBJECT(gps->track.line));
 	}
 
@@ -593,11 +556,11 @@ gboolean gps_redraw_all(gpointer data)
 		GRITS_OBJECT(gps->marker)->center.lat  = gps_data->fix.latitude;
 		GRITS_OBJECT(gps->marker)->center.lon  = gps_data->fix.longitude;
 		GRITS_OBJECT(gps->marker)->center.elev = 0.0;
-		GRITS_OBJECT(gps->marker)->lod         = EARTH_R;
+		GRITS_OBJECT(gps->marker)->lod         = EARTH_R * 5;
 
 		grits_viewer_add(gps->viewer,
 		        GRITS_OBJECT(gps->marker),
-		        GRITS_LEVEL_OVERLAY, TRUE);
+		        GRITS_LEVEL_OVERLAY, FALSE);
 		grits_object_queue_draw(GRITS_OBJECT(gps->marker));
 	}
 
@@ -628,15 +591,20 @@ gboolean gps_redraw_all(gpointer data)
 /* GPS Data Frame */
 static void gps_init_status_info(GritsPluginGps *gps, GtkWidget *gbox)
 {
-	gps->ui.gps_status_frame = gtk_frame_new("GPS Data");
+	gps->ui.gps_status_frame = gtk_frame_new("<b>GPS Data</b>");
+	GtkWidget *label = gtk_frame_get_label_widget(
+	                   GTK_FRAME(gps->ui.gps_status_frame));
+	gtk_label_set_use_markup(GTK_LABEL(label), TRUE);
+	gtk_frame_set_shadow_type(GTK_FRAME(gps->ui.gps_status_frame),
+	                   GTK_SHADOW_NONE);
 	gps->ui.gps_status_table = gtk_table_new(5, 2, TRUE);
-	gtk_container_add(GTK_CONTAINER (gps->ui.gps_status_frame),
+	gtk_container_add(GTK_CONTAINER(gps->ui.gps_status_frame),
 	           gps->ui.gps_status_table);
 
 	/* gps data table setup */
 	gint i;
 	for (i = 0; i < G_N_ELEMENTS(gps_table); i++) {
-		gps_table[i].label_widget = gtk_label_new (gps_table[i].label);
+		gps_table[i].label_widget = gtk_label_new(gps_table[i].label);
 		gtk_label_set_justify(GTK_LABEL(gps_table[i].label_widget),
 		                      GTK_JUSTIFY_LEFT);
 		gtk_table_attach(GTK_TABLE(gps->ui.gps_status_table),
@@ -646,15 +614,15 @@ static void gps_init_status_info(GritsPluginGps *gps, GtkWidget *gbox)
 		gtk_table_attach( GTK_TABLE(gps->ui.gps_status_table),
 				gps_table[i].value_widget, 1, 2, i, i+1, 0, 0, 0, 0);
 
-		PangoFontDescription *font_desc = pango_font_description_new ();
-		pango_font_description_set_size (font_desc,
+		PangoFontDescription *font_desc = pango_font_description_new();
+		pango_font_description_set_size(font_desc,
 				gps_table[i].font_size*PANGO_SCALE);
-		gtk_widget_modify_font (gps_table[i].label_widget, font_desc);
-		gtk_widget_modify_font (gps_table[i].value_widget, font_desc);
-		pango_font_description_free (font_desc);
+		gtk_widget_modify_font(gps_table[i].label_widget, font_desc);
+		gtk_widget_modify_font(gps_table[i].value_widget, font_desc);
+		pango_font_description_free(font_desc);
 	}
 	gtk_box_pack_start(GTK_BOX(gbox), gps->ui.gps_status_frame,
-	                    FALSE, FALSE, 0);
+	                    TRUE, FALSE, 0);
 
 	/* Start UI refresh task, which will reschedule itgps. */
 	gps_redraw_all(gps);
@@ -665,7 +633,7 @@ static void gps_init_status_info(GritsPluginGps *gps, GtkWidget *gbox)
 }
 
 /* GPS Control Frame */
-static gboolean on_gps_follow_clicked_event (GtkWidget *widget, gpointer user_data)
+static gboolean on_gps_follow_clicked_event(GtkWidget *widget, gpointer user_data)
 {
 	GritsPluginGps *gps = (GritsPluginGps *)user_data;
 
@@ -716,7 +684,12 @@ static gboolean on_gps_track_clear_clicked_event(GtkWidget *widget, gpointer use
 static void gps_init_control_frame(GritsPluginGps *gps, GtkWidget *gbox)
 {
 	/* Control checkboxes */
-	GtkWidget *gps_control_frame = gtk_frame_new("GPS Control");
+	GtkWidget *gps_control_frame = gtk_frame_new("<b>GPS Control</b>");
+	GtkWidget *label = gtk_frame_get_label_widget(
+	                   GTK_FRAME(gps_control_frame));
+	gtk_label_set_use_markup(GTK_LABEL(label), TRUE);
+	gtk_frame_set_shadow_type(GTK_FRAME(gps_control_frame),
+	                   GTK_SHADOW_NONE);
 	GtkWidget *cbox = gtk_vbox_new(FALSE, 2);
 	gtk_container_add(GTK_CONTAINER(gps_control_frame), cbox);
 	gtk_box_pack_start(GTK_BOX(gbox), gps_control_frame, FALSE, FALSE, 0);
@@ -724,7 +697,7 @@ static void gps_init_control_frame(GritsPluginGps *gps, GtkWidget *gbox)
 	gps->ui.gps_follow_checkbox =
 	              gtk_check_button_new_with_label("Follow GPS");
 	g_signal_connect(G_OBJECT(gps->ui.gps_follow_checkbox), "clicked",
-	              G_CALLBACK (on_gps_follow_clicked_event),
+	              G_CALLBACK(on_gps_follow_clicked_event),
 	              (gpointer)gps);
 	gtk_box_pack_start(GTK_BOX(cbox), gps->ui.gps_follow_checkbox,
 	               FALSE, FALSE, 0);
@@ -732,14 +705,14 @@ static void gps_init_control_frame(GritsPluginGps *gps, GtkWidget *gbox)
 	gps->ui.gps_track_checkbox =
 	               gtk_check_button_new_with_label("Record Track");
 	g_signal_connect(G_OBJECT(gps->ui.gps_track_checkbox), "clicked",
-	               G_CALLBACK (on_gps_track_enable_clicked_event),
+	               G_CALLBACK(on_gps_track_enable_clicked_event),
 	               (gpointer)gps);
 	gtk_box_pack_start(GTK_BOX(cbox), gps->ui.gps_track_checkbox,
 	               FALSE, FALSE, 0);
 
 	gps->ui.gps_clear_button = gtk_button_new_with_label("Clear Track");
 	g_signal_connect(G_OBJECT(gps->ui.gps_clear_button), "clicked",
-	              G_CALLBACK (on_gps_track_clear_clicked_event),
+	              G_CALLBACK(on_gps_track_clear_clicked_event),
 	              (gpointer)gps);
 	gtk_box_pack_start(GTK_BOX(cbox), gps->ui.gps_clear_button,
 	               FALSE, FALSE, 0);
@@ -752,7 +725,7 @@ static gboolean on_gps_log_clicked_event(GtkWidget *widget, gpointer user_data)
 
 	g_debug("GritsPluginGps: log_clicked_event");
 
-	if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (widget)))  {
+	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON (widget)))  {
 		gps_write_log(gps);
 
 		/* Schedule log file write */
@@ -800,38 +773,41 @@ static gboolean on_gps_log_interval_changed_event(GtkWidget *widget, gpointer us
 static void gps_init_track_log_frame(GritsPluginGps *gps, GtkWidget *gbox)
 {
 	/* Track log box with enable checkbox and filename entry */
-	GtkWidget *gps_log_frame = gtk_frame_new ("Track Log");
-	GtkWidget *lbox = gtk_vbox_new (FALSE, 2);
-	gtk_container_add (GTK_CONTAINER (gps_log_frame), lbox);
-	gtk_box_pack_start (GTK_BOX(gbox), gps_log_frame,
+	GtkWidget *gps_log_frame = gtk_frame_new("<b>Track Log</b>");
+	GtkWidget *label = gtk_frame_get_label_widget(GTK_FRAME(gps_log_frame));
+	gtk_label_set_use_markup(GTK_LABEL(label), TRUE);
+	gtk_frame_set_shadow_type(GTK_FRAME(gps_log_frame), GTK_SHADOW_NONE);
+	GtkWidget *lbox = gtk_vbox_new(FALSE, 2);
+	gtk_container_add(GTK_CONTAINER(gps_log_frame), lbox);
+	gtk_box_pack_start(GTK_BOX(gbox), gps_log_frame,
 			FALSE, FALSE, 0);
 
 	gps->ui.gps_log_checkbox =
 	       gtk_check_button_new_with_label("Log Position to File");
-	g_signal_connect (G_OBJECT (gps->ui.gps_log_checkbox), "clicked",
-	       G_CALLBACK (on_gps_log_clicked_event),
+	g_signal_connect(G_OBJECT(gps->ui.gps_log_checkbox), "clicked",
+	       G_CALLBACK(on_gps_log_clicked_event),
 	       (gpointer)gps);
-	gtk_box_pack_start (GTK_BOX(lbox), gps->ui.gps_log_checkbox,
+	gtk_box_pack_start(GTK_BOX(lbox), gps->ui.gps_log_checkbox,
 	       FALSE, FALSE, 0);
 
 	/* Set up filename entry box */
-	GtkWidget *fbox = gtk_hbox_new (FALSE, 2);
-	GtkWidget *filename_label = gtk_label_new ("Filename:");
-	gtk_box_pack_start (GTK_BOX(fbox), filename_label, FALSE, FALSE, 0);
+	GtkWidget *fbox = gtk_hbox_new(FALSE, 2);
+	GtkWidget *filename_label = gtk_label_new("Filename:");
+	gtk_box_pack_start(GTK_BOX(fbox), filename_label, FALSE, FALSE, 0);
 	gps->ui.gps_log_filename_entry = gtk_entry_new();
-	gtk_box_pack_start (GTK_BOX(fbox), gps->ui.gps_log_filename_entry,
+	gtk_box_pack_start(GTK_BOX(fbox), gps->ui.gps_log_filename_entry,
 	       TRUE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX(lbox), fbox, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(lbox), fbox, FALSE, FALSE, 0);
 
 	/* set up gps log interval slider */
-	GtkWidget *ubox = gtk_hbox_new (FALSE, 4);
-	GtkWidget *interval_label = gtk_label_new ("Update Interval:");
-	gtk_box_pack_start (GTK_BOX(ubox), interval_label, FALSE, FALSE, 0);
+	GtkWidget *ubox = gtk_hbox_new(FALSE, 4);
+	GtkWidget *interval_label = gtk_label_new("Update Interval:");
+	gtk_box_pack_start(GTK_BOX(ubox), interval_label, FALSE, FALSE, 0);
 	gps->ui.gps_log_interval_slider =
 	            gtk_hscale_new_with_range(1.0, 600.0, 30.0);
-	gtk_range_set_value (GTK_RANGE(gps->ui.gps_log_interval_slider),
+	gtk_range_set_value(GTK_RANGE(gps->ui.gps_log_interval_slider),
 	            GPS_LOG_DEFAULT_UPDATE_INTERVAL);
-	g_signal_connect (G_OBJECT (gps->ui.gps_log_interval_slider),
+	g_signal_connect(G_OBJECT(gps->ui.gps_log_interval_slider),
 	            "value-changed",
 	            G_CALLBACK(on_gps_log_interval_changed_event),
 	            (gpointer)gps);
@@ -841,9 +817,9 @@ static void gps_init_track_log_frame(GritsPluginGps *gps, GtkWidget *gbox)
 	gtk_range_set_update_policy(
 	            GTK_RANGE(gps->ui.gps_log_interval_slider),
 	            GTK_UPDATE_DELAYED);
-	gtk_box_pack_start (GTK_BOX(ubox), gps->ui.gps_log_interval_slider,
+	gtk_box_pack_start(GTK_BOX(ubox), gps->ui.gps_log_interval_slider,
 	            TRUE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX(lbox), ubox, FALSE, FALSE, 0);
+	gtk_box_pack_start(GTK_BOX(lbox), ubox, FALSE, FALSE, 0);
 }
 
 
@@ -906,12 +882,9 @@ GritsPluginGps *grits_plugin_gps_new(GritsViewer *viewer, GritsPrefs *prefs)
 	gps->follow_gps = FALSE;
 
 	gps_track_init(&gps->track);
-	gps_init_status_info(gps, gps->hbox);
-	gps_init_control_frame(gps, gps->hbox);
-	gps_init_track_log_frame(gps, gps->hbox);
-#ifdef GPS_RANGE_RINGS
-	gps_init_range_rings(gps, gps->hbox);
-#endif
+	gps_init_control_frame(gps, gps->config);
+	gps_init_track_log_frame(gps, gps->config);
+	gps_init_status_info(gps, gps->config);
 
 	return gps;
 }
@@ -939,14 +912,7 @@ static void grits_plugin_gps_init(GritsPluginGps *gps)
 {
 	g_debug("GritsPluginGps: gps_init");
 
-	gps->config     = gtk_notebook_new();
-
-	gps->hbox = gtk_hbox_new(FALSE, 2);
-	gtk_notebook_insert_page(GTK_NOTEBOOK(gps->config),
-				GTK_WIDGET(gps->hbox),
-				gtk_label_new("GPS"), 0);
-	/* Need to position on the top because of Win32 bug */
-	gtk_notebook_set_tab_pos(GTK_NOTEBOOK(gps->config), GTK_POS_LEFT);
+	gps->config     = gtk_hbox_new(FALSE, 15);
 }
 
 static void grits_plugin_gps_dispose(GObject *gobject)

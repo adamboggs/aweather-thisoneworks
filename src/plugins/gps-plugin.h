@@ -51,9 +51,6 @@ typedef struct {
 	GtkWidget *gps_log_interval_slider;
 	guint      gps_log_timeout_id; /* id of timeout so we can delete it */
 	guint      gps_log_number;     /* sequential log number */
-
-	/* range ring frame */
-	GtkWidget *gps_rangering_checkbox;
 } GpsUi;
 
 typedef struct {
@@ -75,13 +72,11 @@ struct _GritsPluginGps {
 	GritsPrefs  *prefs;
 	GtkWidget   *config;
 	guint        tab_id;
-	GtkWidget   *hbox;
 	GritsMarker *marker;
 
 	struct gps_data_t gps_data;
 
 	gboolean     follow_gps;
-	gboolean     gps_rangering_active;  /* range rings are visible or not */
 	guint        gps_update_timeout_id; /* id of timeout so we can delete it */
 
 	GpsTrack     track;
